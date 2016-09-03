@@ -2,7 +2,7 @@
 # Makefile for project deleteme 
 # Created: Sat Sep  3 08:28:52 MDT 2016
 #
-#<one line to give the program's name and a brief idea of what it does.>
+# Manages building the gatecountaudit application.
 #    Copyright (C) 2016  Andrew Nisbet
 #
 # This program is free software; you can redistribute it and/or modify
@@ -24,20 +24,11 @@
 # Rev: 
 #      0.0 - Dev. 
 ####################################################
-# Change comment below for appropriate server.
-PRODUCTION_SERVER=eplapp.library.ualberta.ca
-TEST_SERVER=edpl-t.library.ualberta.ca
-USER=sirsi
-REMOTE=~/Unicorn/Bincustom/
+# This application runs native on ILSdev1@epl.ca and should be scheduled from there.
 LOCAL=~/projects/gatecountaudit/
 APP=gatecountaudit.pl
 ARGS=-x
-.PHONY: put test production
-put: test
-	scp ${LOCAL}${APP} ${USER}@${TEST_SERVER}:${REMOTE}
-	ssh ${USER}@${TEST_SERVER} '${REMOTE}${APP} ${ARGS}'
+.PHONY: test
 test:
 	perl -c ${APP}
-production: test
-	scp ${LOCAL}${APP} ${USER}@${PRODUCTION_SERVER}:${REMOTE}
 
