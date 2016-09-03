@@ -43,6 +43,29 @@ my $PASSWORD_FILE      = "password.txt";
 my $USER               = "";
 my $DATABASE           = "";
 my $PASSWORD           = "";
+# +--------------+-------------+------+-----+---------+----------------+
+# | Field        | Type        | Null | Key | Default | Extra          |
+# +--------------+-------------+------+-----+---------+----------------+
+# | GateId       | smallint(6) | NO   | PRI | NULL    | auto_increment |
+# | IpAddress    | char(16)    | YES  |     | NULL    |                |
+# | Branch       | char(3)     | YES  |     | NULL    |                |
+# | Location     | char(255)   | YES  |     | NULL    |                |
+# | Description  | char(255)   | YES  |     | NULL    |                |
+# | LastInCount  | int(11)     | YES  |     | NULL    |                |
+# | LastOutCount | int(11)     | YES  |     | NULL    |                |
+# | ReverseInOut | tinyint(1)  | YES  |     | 0       |                |
+# +--------------+-------------+------+-----+---------+----------------+
+my $GATE_TABLE = "gate_info";
+# +----------+--------------+------+-----+-------------------+----------------+
+# | Field    | Type         | Null | Key | Default           | Extra          |
+# +----------+--------------+------+-----+-------------------+----------------+
+# | Id       | int(11)      | NO   | PRI | NULL              | auto_increment |
+# | DateTime | timestamp    | NO   |     | CURRENT_TIMESTAMP |                |
+# | Branch   | varchar(3)   | YES  |     | NULL              |                |
+# | Total    | int(11)      | YES  |     | NULL              |                |
+# | Comment  | varchar(120) | YES  |     | NULL              |                |
+# +----------+--------------+------+-----+-------------------+----------------+
+my $LANDS_TABLE = "lands";
 
 #
 # Message about this program and how to use it.
@@ -137,6 +160,8 @@ sub create_tmp_file( $$ )
 	return $master_file;
 }
 
+### Note: not used, but intended for profiling errors on specific gates. Coming soon.
+###
 # Returns the gate IDs for a named branch. The branch can be upper or lower case, and need
 # not include the EPL prefix, that is branches are looked up by last three letters of the 
 # branches' code. Example EPLMNA can be submitted as EPLMNA, eplmna, MNA, or mna.
@@ -158,11 +183,11 @@ sub get_gate_IDs( $ )
 	my $results = '';
 	if ( ! $branch )
 	{
-		$results = `echo "select GateId from gate_info;" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		$results = `echo "select GateId from $GATE_TABLE;" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
 	}
 	else
 	{
-		$results = `echo "select GateId from gate_info where Branch='$branch';" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		$results = `echo "select GateId from $GATE_TABLE where Branch='$branch';" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
 	}
 	printf STDERR "Search for branch submitted.\n%s", $results if ( $opt{'d'} );	
 	my @ids = split '\n', $results;
@@ -171,11 +196,75 @@ sub get_gate_IDs( $ )
 	return @ids;
 }
 
+# Returns a list of all the branches in the lands table.
+# param:  none.
+# return: Array list of all the branches in the lands table.
+sub get_all_branches()
+{
+	my $results = `echo "select distinct Branch from $LANDS_TABLE;" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	my @branch_ids = split '\n', $results;
+	# remove the header from the returned table that describes the columns.
+	shift @branch_ids if ( @branch_ids );
+	return @branch_ids;
+}
+
 # Repairs any erroneous entries to some definition of erroneous. TODO define error types fully.
 # param:  Gate id string.
 # return: Number of errors fixed.
-sub repair_gates_by_gate_id( $ )
+sub repair_branch_counts( $ )
 {
+	# Consider the following errors for 'WMC'.
+	# +-------+---------------------+--------+-------+---------+
+	# | Id    | DateTime            | Branch | Total | Comment |
+	# +-------+---------------------+--------+-------+---------+
+	# |   ...
+	# |  9867 | 2014-03-23 23:58:01 | WMC    |    -1 | NULL    |
+	# | 10379 | 2014-04-24 23:58:02 | WMC    |    -1 | NULL    |
+	# |   ...
+	# We note that the entry with ID 10379 took place on 2014-04-24 23:58:02, so we select
+	# the previous 28 days worth of entries which will necessarily include the last 4 week
+	# days prior to the day the error occured.
+	# select * from lands where DateTime < "2014-04-24 23:58:02" and Branch = "WMC" order by DateTime desc limit 30;
+	# +-------+---------------------+--------+-------+---------+
+	# | Id    | DateTime            | Branch | Total | Comment |
+	# +-------+---------------------+--------+-------+---------+
+	# | 10363 | 2014-04-23 23:58:01 | WMC    |  1441 | NULL    | Monday
+	# | 10347 | 2014-04-22 23:58:01 | WMC    |  1800 | NULL    |
+	# | 10331 | 2014-04-21 23:58:01 | WMC    |     0 | NULL    |
+	# | 10315 | 2014-04-20 23:58:01 | WMC    |     0 | NULL    |
+	# | 10299 | 2014-04-19 23:58:01 | WMC    |  1716 | NULL    |
+	# | 10283 | 2014-04-18 23:58:01 | WMC    |     0 | NULL    |
+	# | 10267 | 2014-04-17 23:58:01 | WMC    |  1536 | NULL    | <- Previous Sunday
+	# | 10251 | 2014-04-16 23:58:02 | WMC    |  1302 | NULL    |
+	# | 10235 | 2014-04-15 23:58:01 | WMC    |  1078 | NULL    |
+	# | 10219 | 2014-04-14 23:58:02 | WMC    |  1421 | NULL    |
+	# | 10203 | 2014-04-13 23:58:01 | WMC    |   865 | NULL    |
+	# | 10187 | 2014-04-12 23:58:01 | WMC    |  1674 | NULL    |
+	# | 10171 | 2014-04-11 23:58:01 | WMC    |  1024 | NULL    |
+	# | 10155 | 2014-04-10 23:58:02 | WMC    |  1349 | NULL    | <- Previous Sunday
+	# | 10139 | 2014-04-09 23:58:01 | WMC    |  1483 | NULL    |
+	# | 10123 | 2014-04-08 23:58:01 | WMC    |  1433 | NULL    |
+	# | 10107 | 2014-04-07 23:58:01 | WMC    |  1541 | NULL    |
+	# | 10091 | 2014-04-06 23:58:01 | WMC    |   905 | NULL    |
+	# | 10075 | 2014-04-05 23:58:01 | WMC    |  1780 | NULL    |
+	# | 10059 | 2014-04-04 23:58:01 | WMC    |  1417 | NULL    |
+	# | 10043 | 2014-04-03 23:58:01 | WMC    |  1658 | NULL    | <- Previous Sunday
+	# | 10027 | 2014-04-02 23:58:01 | WMC    |  1850 | NULL    |
+	# | 10011 | 2014-04-01 23:58:01 | WMC    |  1678 | NULL    |
+	# |  9995 | 2014-03-31 23:58:01 | WMC    |  1723 | NULL    |
+	# |  9979 | 2014-03-30 23:58:01 | WMC    |   895 | NULL    |
+	# |  9963 | 2014-03-29 23:58:01 | WMC    |  1792 | NULL    |
+	# |  9947 | 2014-03-28 23:58:01 | WMC    |  1272 | NULL    |
+	# |  9931 | 2014-03-27 23:58:02 | WMC    |  1390 | NULL    | <- Previous Sunday
+	# +-------+---------------------+--------+-------+---------+
+	# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
+	
+	# my $results = `echo 'select * from $LANDS_TABLE where DateTime < "2014-04-24 23:58:02" and Branch = "WMC" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	# my $branch_previous_month_counts = create_tmp_file( "gatecountaudit_prev_month_counts", $results );
+	# $results = `cat $branch_previous_month_counts | $PIPE -W'\\s+' -Lskip7`;
+	
+	# Updating then becomes 
+	# update lands set Total=721, Comment="Estimated based on previous 4 week's counts for this week day." where Id=8600;
 	return 0; # Stub for now.
 }
 
@@ -186,7 +275,8 @@ sub repair_gates_by_gate_id( $ )
 # return: none
 sub do_audit()
 {
-	
+	# we have to get all the branches.
+	my @branches = get_all_branches();
 }
 
 # Kicks off the setting of various switches.
@@ -200,8 +290,6 @@ sub init
 	# Test functions
 	read_password( $PASSWORD_FILE );
 	printf STDERR "Database: %s, Password: ********, Login: %s.\n", $DATABASE, $USER if ( $opt{'d'} );
-	my @gate_ids = get_gate_IDs( "eplclv" );
-	printf STDERR "requested gate ids: %d\n", scalar( @gate_ids );
 }
 
 init();
@@ -217,11 +305,7 @@ if ( $opt{'u'} )
 {
 	do_audit() if ( ! $is_audited );
 	$is_audited++;
-	my @gates = get_gate_IDs( $opt{'u'} );
-	foreach my $gate ( @gates )
-	{
-		$repairs += repair_gates_by_gate_id( $gate );
-	}
+	$repairs += repair_branch_counts( $opt{'u'} );
 }
 if ( $opt{'U'} )
 {
@@ -230,11 +314,7 @@ if ( $opt{'U'} )
 	my @all_branches = get_all_branches();
 	foreach my $branch ( @all_branches )
 	{
-		my @gates = get_gate_IDs( $branch );
-		foreach my $gate ( @gates )
-		{
-			$repairs += repair_gates_by_gate_id( $gate );
-		}
+		$repairs += repair_branch_counts( $branch );
 	}
 }
 printf STDERR "Total repairs: %d\n", $repairs if ( $opt{'d'} );
