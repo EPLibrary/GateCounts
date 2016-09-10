@@ -27,7 +27,7 @@
 # This application runs native on ILSdev1@epl.ca and should be scheduled from there.
 LOCAL=~/projects/gatecountaudit/
 APP=gatecountaudit.pl
-ARGS=-rCAL -td
+ARGS=-rABB -tdi
 .PHONY: test head clean
 test:
 	perl -c ${APP}

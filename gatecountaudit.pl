@@ -24,7 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
-#          0.0 - Dev. 
+#          0.1 - Repair (-r) tested. 
 #
 ####################################################
 
@@ -33,7 +33,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.0};
+my $VERSION            = qq{0.1};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -77,7 +77,7 @@ sub usage()
     print STDERR << "EOF";
 
 	usage: $0 [-adim<comment>tRr<branch>tx]
-Usage notes for gatecountaudit.pl.
+$0 audits and repairs gate counts. The patron count database ocassional.
 
  -a: Audit the database for broken entries and report don't fix anything. (See -u and -U).
  -d: Turn on debugging.
@@ -223,6 +223,18 @@ sub get_all_branches()
 # return: Number of errors fixed.
 sub repair_branch_counts( $ )
 {
+	my $branch = shift;
+	my $repair_counts = repair_incomplete_polling_results( $branch );
+	# Other repairs as required.
+	return $repair_counts;
+}
+
+# Repairs any erroneous entries that are -1, those indicate that there was
+# a hardware or network error at the time of polling.
+# param:  Branch code as a string.
+# return: Number of errors fixed.
+sub repair_incomplete_polling_results( $ )
+{
 	my $branch       = shift;
 	return 0 if ( ! $branch );
 	my $repair_count = 0;
@@ -288,10 +300,10 @@ sub repair_branch_counts( $ )
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
 		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
-		continue if ( ! -s $branch_all_previous_month_counts );
+		last if ( ! -s $branch_all_previous_month_counts );
 		$results = `cat $branch_all_previous_month_counts | $PIPE -Lskip7`;
 		my $branch_previous_count_samples = create_tmp_file( "gatecountaudit_prev_count_samples", $results );
-		continue if ( ! -s $branch_previous_count_samples );
+		last if ( ! -s $branch_previous_count_samples );
 		# 10283|2014-04-18|23:58:01|WMC|0|NULL
 		# 10171|2014-04-11|23:58:01|WMC|1024|NULL
 		# 10059|2014-04-04|23:58:01|WMC|1417|NULL
@@ -312,18 +324,20 @@ sub repair_branch_counts( $ )
 		if ( $average_previous_days <= 0 )
 		{
 			printf STDERR "* warning, cowardly refusing to update $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
-			continue;
 		}
-		printf STDERR "updating $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
-		if ( $opt{'i'} )
+		else
 		{
-			printf STDERR "do you want to continue? ";
-			my $answer = <>;
-			next if ( $answer =~ m/(n|N)/ );
+			printf STDERR "updating $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
+			if ( $opt{'i'} )
+			{
+				printf STDERR "do you want to continue? ";
+				my $answer = <>;
+				next if ( $answer =~ m/(n|N)/ );
+			}
+			# Updating then becomes 
+			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" >>update_err.txt`;
+			$repair_count++;
 		}
-		# Updating then becomes 
-		`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" >>update_err.txt`;
-		$repair_count++;
 	}
 	close ID_FILE;
 	return $repair_count;
