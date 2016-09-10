@@ -76,7 +76,7 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-adim<comment>tUu<branch>tx]
+	usage: $0 [-adim<comment>tRr<branch>tx]
 Usage notes for gatecountaudit.pl.
 
  -a: Audit the database for broken entries and report don't fix anything. (See -u and -U).
@@ -84,8 +84,8 @@ Usage notes for gatecountaudit.pl.
  -i: Interactive mode. Will ask before performing each repair. 
  -m<message>: Change the comment message from the default: '$MESSAGE'.
  -t: Preserve temporary files in $TEMP_DIR.
- -U: Repair all broken entries for all the gates.
- -u<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
+ -R: Repair all broken entries for all the gates.
+ -r<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
  -x: This (help) message.
 
 example:
@@ -240,6 +240,7 @@ sub repair_branch_counts( $ )
 	# This finds all the network errors for a given branch.
 	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -L2-`;
 	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
+	return $repair_count if ( ! -s $branch_errors );
 	$results = `cat $branch_errors | $PIPE -W'\\s+' -oc0 -L2-`;
 	my $branch_error_Ids = create_tmp_file( "gatecountaudit_branch_error_Ids", $results );
 	return $repair_count if ( ! -s $branch_error_Ids );
@@ -287,8 +288,10 @@ sub repair_branch_counts( $ )
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
 		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
+		continue if ( ! -s $branch_all_previous_month_counts );
 		$results = `cat $branch_all_previous_month_counts | $PIPE -Lskip7`;
 		my $branch_previous_count_samples = create_tmp_file( "gatecountaudit_prev_count_samples", $results );
+		continue if ( ! -s $branch_previous_count_samples );
 		# 10283|2014-04-18|23:58:01|WMC|0|NULL
 		# 10171|2014-04-11|23:58:01|WMC|1024|NULL
 		# 10059|2014-04-04|23:58:01|WMC|1417|NULL
@@ -346,7 +349,7 @@ sub do_audit()
 # return: 
 sub init
 {
-    my $opt_string = 'adim:tUu:x';
+    my $opt_string = 'adim:tRr:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
 	read_password( $PASSWORD_FILE );
@@ -367,13 +370,13 @@ if ( $opt{'a'} )
 	do_audit();
 	$is_audited++;
 }
-if ( $opt{'u'} )
+if ( $opt{'r'} )
 {
-	# do_audit() if ( ! $is_audited );
+	do_audit() if ( ! $is_audited );
 	$is_audited++;
-	$repairs += repair_branch_counts( $opt{'u'} );
+	$repairs += repair_branch_counts( $opt{'r'} );
 }
-if ( $opt{'U'} )
+if ( $opt{'R'} )
 {
 	do_audit() if ( ! $is_audited );
 	$is_audited++;
