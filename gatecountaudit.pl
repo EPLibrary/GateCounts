@@ -36,7 +36,7 @@ use Getopt::Std;
 my $VERSION            = qq{0.0};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
-chomp ( my $DATE       = `date +%m/%d/%Y` );
+chomp ( my $DATE       = `date +%Y%m%d` );
 my @CLEAN_UP_FILE_LIST = (); # List of file names that will be deleted at the end of the script if ! '-t'.
 my $PIPE               = "/usr/local/sbin/pipe.pl";
 my $PASSWORD_FILE      = "password.txt";
@@ -65,7 +65,9 @@ my $GATE_TABLE = "gate_info";
 # | Total    | int(11)      | YES  |     | NULL              |                |
 # | Comment  | varchar(120) | YES  |     | NULL              |                |
 # +----------+--------------+------+-----+-------------------+----------------+
-my $LANDS_TABLE = "lands";
+my $LANDS_TABLE        = "lands";
+chomp ( my $MSG_DATE   = `date +%m/%d/%Y` );
+my $MESSAGE            = "Estimated based on previous 4 week days. $MSG_DATE";
 
 #
 # Message about this program and how to use it.
@@ -74,11 +76,13 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-xt]
+	usage: $0 [-adtUu<branch>tx]
 Usage notes for gatecountaudit.pl.
 
  -a: Audit the database for broken entries and report don't fix anything. (See -u and -U).
  -d: Turn on debugging.
+ -l<n>: Optional limit repairs to first 'n' errors, where n is a positive integer, minimum of 1 will 
+     be repaired even if 0 is selected. Default, no limit - fix them all.
  -t: Preserve temporary files in $TEMP_DIR.
  -U: Repair all broken entries for all the gates.
  -u<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
@@ -208,11 +212,20 @@ sub get_all_branches()
 	return @branch_ids;
 }
 
-# Repairs any erroneous entries to some definition of erroneous. TODO define error types fully.
-# param:  Gate id string.
+# Repairs any erroneous entries for a given branch. This function makes repairs to the LANDS table
+# which contains aggregate data from all gates at a given branch for a specific date. 
+# TODO define error types fully. Example find entries that are -1, those indicate that there was
+# a hardware or network error at the time of polling. Other errors are more subtle. A regular gate
+# count appearing on a date that is marked as a branch holiday indicates artificially high readings.
+# Counts that have dropped unexplainedly are another type of error, which can manifest in the LANDS
+# table, but are best dealt with by profiling individual gates.
+# param:  Branch code as a string.
 # return: Number of errors fixed.
 sub repair_branch_counts( $ )
 {
+	my $branch       = shift;
+	return 0 if ( ! $branch );
+	my $repair_count = 0;
 	# Consider the following errors for 'WMC'.
 	# +-------+---------------------+--------+-------+---------+
 	# | Id    | DateTime            | Branch | Total | Comment |
@@ -224,48 +237,94 @@ sub repair_branch_counts( $ )
 	# We note that the entry with ID 10379 took place on 2014-04-24 23:58:02, so we select
 	# the previous 28 days worth of entries which will necessarily include the last 4 week
 	# days prior to the day the error occured.
-	# select * from lands where DateTime < "2014-04-24 23:58:02" and Branch = "WMC" order by DateTime desc limit 30;
-	# +-------+---------------------+--------+-------+---------+
-	# | Id    | DateTime            | Branch | Total | Comment |
-	# +-------+---------------------+--------+-------+---------+
-	# | 10363 | 2014-04-23 23:58:01 | WMC    |  1441 | NULL    | Monday
-	# | 10347 | 2014-04-22 23:58:01 | WMC    |  1800 | NULL    |
-	# | 10331 | 2014-04-21 23:58:01 | WMC    |     0 | NULL    |
-	# | 10315 | 2014-04-20 23:58:01 | WMC    |     0 | NULL    |
-	# | 10299 | 2014-04-19 23:58:01 | WMC    |  1716 | NULL    |
-	# | 10283 | 2014-04-18 23:58:01 | WMC    |     0 | NULL    |
-	# | 10267 | 2014-04-17 23:58:01 | WMC    |  1536 | NULL    | <- Previous Sunday
-	# | 10251 | 2014-04-16 23:58:02 | WMC    |  1302 | NULL    |
-	# | 10235 | 2014-04-15 23:58:01 | WMC    |  1078 | NULL    |
-	# | 10219 | 2014-04-14 23:58:02 | WMC    |  1421 | NULL    |
-	# | 10203 | 2014-04-13 23:58:01 | WMC    |   865 | NULL    |
-	# | 10187 | 2014-04-12 23:58:01 | WMC    |  1674 | NULL    |
-	# | 10171 | 2014-04-11 23:58:01 | WMC    |  1024 | NULL    |
-	# | 10155 | 2014-04-10 23:58:02 | WMC    |  1349 | NULL    | <- Previous Sunday
-	# | 10139 | 2014-04-09 23:58:01 | WMC    |  1483 | NULL    |
-	# | 10123 | 2014-04-08 23:58:01 | WMC    |  1433 | NULL    |
-	# | 10107 | 2014-04-07 23:58:01 | WMC    |  1541 | NULL    |
-	# | 10091 | 2014-04-06 23:58:01 | WMC    |   905 | NULL    |
-	# | 10075 | 2014-04-05 23:58:01 | WMC    |  1780 | NULL    |
-	# | 10059 | 2014-04-04 23:58:01 | WMC    |  1417 | NULL    |
-	# | 10043 | 2014-04-03 23:58:01 | WMC    |  1658 | NULL    | <- Previous Sunday
-	# | 10027 | 2014-04-02 23:58:01 | WMC    |  1850 | NULL    |
-	# | 10011 | 2014-04-01 23:58:01 | WMC    |  1678 | NULL    |
-	# |  9995 | 2014-03-31 23:58:01 | WMC    |  1723 | NULL    |
-	# |  9979 | 2014-03-30 23:58:01 | WMC    |   895 | NULL    |
-	# |  9963 | 2014-03-29 23:58:01 | WMC    |  1792 | NULL    |
-	# |  9947 | 2014-03-28 23:58:01 | WMC    |  1272 | NULL    |
-	# |  9931 | 2014-03-27 23:58:02 | WMC    |  1390 | NULL    | <- Previous Sunday
-	# +-------+---------------------+--------+-------+---------+
-	# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
-	
-	# my $results = `echo 'select * from $LANDS_TABLE where DateTime < "2014-04-24 23:58:02" and Branch = "WMC" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
-	# my $branch_previous_month_counts = create_tmp_file( "gatecountaudit_prev_month_counts", $results );
-	# $results = `cat $branch_previous_month_counts | $PIPE -W'\\s+' -Lskip7`;
-	
-	# Updating then becomes 
-	# update lands set Total=721, Comment="Estimated based on previous 4 week's counts for this week day." where Id=8600;
-	return 0; # Stub for now.
+	# This finds all the network errors for a given branch.
+	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by Id;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -L2-`;
+	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
+	$results = `cat $branch_errors | $PIPE -W'\\s+' -oc0 -L2-`;
+	my $branch_error_Ids = create_tmp_file( "gatecountaudit_branch_error_Ids", $results );
+	# Open that tmp file and read line by line the Ids then fix them.
+	open ID_FILE, "<$branch_error_Ids" or die "** error expected a temp file of Ids that have errors for $branch, $!\n";
+	my $loops = 1; # Controls the limit of number of repairs if set and compared to '-l'.
+	while (<ID_FILE>)
+	{
+		chomp( my $primary_key_Id = $_ );
+		$primary_key_Id = sprintf "%d", $primary_key_Id;
+		# +-------+---------------------+--------+-------+---------+
+		# | Id    | DateTime            | Branch | Total | Comment |
+		# +-------+---------------------+--------+-------+---------+
+		# | 10363 | 2014-04-23 23:58:01 | WMC    |  1441 | NULL    | Monday
+		# | 10347 | 2014-04-22 23:58:01 | WMC    |  1800 | NULL    |
+		# | 10331 | 2014-04-21 23:58:01 | WMC    |     0 | NULL    |
+		# | 10315 | 2014-04-20 23:58:01 | WMC    |     0 | NULL    |
+		# | 10299 | 2014-04-19 23:58:01 | WMC    |  1716 | NULL    |
+		# | 10283 | 2014-04-18 23:58:01 | WMC    |     0 | NULL    |
+		# | 10267 | 2014-04-17 23:58:01 | WMC    |  1536 | NULL    | <- Previous Sunday
+		# | 10251 | 2014-04-16 23:58:02 | WMC    |  1302 | NULL    |
+		# | 10235 | 2014-04-15 23:58:01 | WMC    |  1078 | NULL    |
+		# | 10219 | 2014-04-14 23:58:02 | WMC    |  1421 | NULL    |
+		# | 10203 | 2014-04-13 23:58:01 | WMC    |   865 | NULL    |
+		# | 10187 | 2014-04-12 23:58:01 | WMC    |  1674 | NULL    |
+		# | 10171 | 2014-04-11 23:58:01 | WMC    |  1024 | NULL    |
+		# | 10155 | 2014-04-10 23:58:02 | WMC    |  1349 | NULL    | <- Previous Sunday
+		# | 10139 | 2014-04-09 23:58:01 | WMC    |  1483 | NULL    |
+		# | 10123 | 2014-04-08 23:58:01 | WMC    |  1433 | NULL    |
+		# | 10107 | 2014-04-07 23:58:01 | WMC    |  1541 | NULL    |
+		# | 10091 | 2014-04-06 23:58:01 | WMC    |   905 | NULL    |
+		# | 10075 | 2014-04-05 23:58:01 | WMC    |  1780 | NULL    |
+		# | 10059 | 2014-04-04 23:58:01 | WMC    |  1417 | NULL    |
+		# | 10043 | 2014-04-03 23:58:01 | WMC    |  1658 | NULL    | <- Previous Sunday
+		# | 10027 | 2014-04-02 23:58:01 | WMC    |  1850 | NULL    |
+		# | 10011 | 2014-04-01 23:58:01 | WMC    |  1678 | NULL    |
+		# |  9995 | 2014-03-31 23:58:01 | WMC    |  1723 | NULL    |
+		# |  9979 | 2014-03-30 23:58:01 | WMC    |   895 | NULL    |
+		# |  9963 | 2014-03-29 23:58:01 | WMC    |  1792 | NULL    |
+		# |  9947 | 2014-03-28 23:58:01 | WMC    |  1272 | NULL    |
+		# |  9931 | 2014-03-27 23:58:02 | WMC    |  1390 | NULL    | <- Previous Sunday
+		# +-------+---------------------+--------+-------+---------+
+		# Note that some of the selections will eventually use an average estimate in it's own estimate but 
+		# the data should smooth naturally as as repair older entries then newer ones.
+		# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
+		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
+		$results = `echo 'select * from $LANDS_TABLE where Id<=$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
+		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
+		$results = `cat $branch_all_previous_month_counts | $PIPE -Lskip7`;
+		my $branch_previous_count_samples = create_tmp_file( "gatecountaudit_prev_count_samples", $results );
+		# 10283|2014-04-18|23:58:01|WMC|0|NULL
+		# 10171|2014-04-11|23:58:01|WMC|1024|NULL
+		# 10059|2014-04-04|23:58:01|WMC|1417|NULL
+		# 9947|2014-03-28|23:58:01|WMC|1272|NULL
+		# Now pipe can take an average and report to STDERR. We don't need the results from STDOUT.
+		`cat $branch_previous_count_samples | $PIPE -vc4 2>err.txt`;
+		# Now parse the STDERR report.
+		$results = `cat err.txt | $PIPE -W'\\s+' -oc1 -g'c1:\\d+'`;
+		if ( -e "err.txt" )
+		{
+			unlink "err.txt" ;
+		}
+		else
+		{
+			# there is no err.txt file that means the computation of the average over the month failed. Exit.
+			printf STDERR "** error, expected pipe.pl error file to compute averages but none found.\n";
+			exit;
+		}
+		chomp( $results );
+		return $repair_count if ( ! $results );
+		my $average_previous_days = sprintf "%d", $results;
+		# If we got some weird result report it and continue.
+		if ( $average_previous_days <= 0 )
+		{
+			printf STDERR "* warning, cowardly refusing to update $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
+			continue;
+		}
+		# Updating then becomes 
+		printf STDERR "updating $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
+		# update lands set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;
+		$repair_count++;
+		last if ( $opt{'l'} and $loops >= $opt{'l'} );
+		$loops++;
+	}
+	close ID_FILE;
+	return $repair_count;
 }
 
 # Audits the database for missing data. Specificially the LANDS table is checked for 
@@ -277,6 +336,10 @@ sub do_audit()
 {
 	# we have to get all the branches.
 	my @branches = get_all_branches();
+	foreach my $branch ( @branches )
+	{
+		printf STDERR "branch ->%s\n", $branch if ( $opt{'d'} );
+	}
 }
 
 # Kicks off the setting of various switches.
@@ -284,12 +347,21 @@ sub do_audit()
 # return: 
 sub init
 {
-    my $opt_string = 'adtUu:x';
+    my $opt_string = 'adl:m:tUu:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
-	# Test functions
+	if ( $opt{'l'} !~ m/^\d+$/ )
+	{
+		printf STDERR "** error limit must be a positive integer, recieved '%s'.\n", $opt{'l'};
+		usage();
+	}
 	read_password( $PASSWORD_FILE );
-	printf STDERR "Database: %s, Password: ********, Login: %s.\n", $DATABASE, $USER if ( $opt{'d'} );
+	printf STDERR "Database: %s, Password: '********', Login: %s.\n", $DATABASE, $USER if ( $opt{'d'} );
+	if ( $opt{'m'} )
+	{
+		$MESSAGE = $opt{'m'}." $MSG_DATE".
+		printf STDERR "Comment message set to '%s'.\n", $MESSAGE;
+	}
 }
 
 init();
@@ -303,7 +375,7 @@ if ( $opt{'a'} )
 }
 if ( $opt{'u'} )
 {
-	do_audit() if ( ! $is_audited );
+	# do_audit() if ( ! $is_audited );
 	$is_audited++;
 	$repairs += repair_branch_counts( $opt{'u'} );
 }

@@ -27,8 +27,12 @@
 # This application runs native on ILSdev1@epl.ca and should be scheduled from there.
 LOCAL=~/projects/gatecountaudit/
 APP=gatecountaudit.pl
-ARGS=-x
-.PHONY: test
+ARGS=-uWMC -td -l1
+.PHONY: test head clean
 test:
 	perl -c ${APP}
+	${LOCAL}${APP} ${ARGS}
+	# -head /tmp/gatecountaudit_*
+clean:
+	-rm /tmp/gatecountaudit_*
 
