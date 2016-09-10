@@ -66,7 +66,7 @@ my $GATE_TABLE = "gate_info";
 # | Comment  | varchar(120) | YES  |     | NULL              |                |
 # +----------+--------------+------+-----+-------------------+----------------+
 my $LANDS_TABLE        = "lands";
-chomp ( my $MSG_DATE   = `date +%m/%d/%Y` );
+my $MSG_DATE           = $DATE;
 my $MESSAGE            = "Estimated based on previous 4 week days. $MSG_DATE";
 
 #
@@ -320,7 +320,7 @@ sub repair_branch_counts( $ )
 		printf STDERR "updating $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
 		# update lands set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;
 		$repair_count++;
-		last if ( $opt{'l'} and $loops >= $opt{'l'} );
+		last if ( defined $opt{'l'} and $loops >= $opt{'l'} );
 		$loops++;
 	}
 	close ID_FILE;
@@ -350,7 +350,7 @@ sub init
     my $opt_string = 'adl:m:tUu:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
-	if ( $opt{'l'} !~ m/^\d+$/ )
+	if ( defined $opt{'l'} and $opt{'l'} !~ m/^\d+$/ )
 	{
 		printf STDERR "** error limit must be a positive integer, recieved '%s'.\n", $opt{'l'};
 		usage();
@@ -359,7 +359,7 @@ sub init
 	printf STDERR "Database: %s, Password: '********', Login: %s.\n", $DATABASE, $USER if ( $opt{'d'} );
 	if ( $opt{'m'} )
 	{
-		$MESSAGE = $opt{'m'}." $MSG_DATE".
+		$MESSAGE = $opt{'m'}." $MSG_DATE";
 		printf STDERR "Comment message set to '%s'.\n", $MESSAGE;
 	}
 }
