@@ -3,7 +3,7 @@
 #
 # Perl source file for project gatecountaudit 
 #
-# <one line to give the program's name and a brief idea of what it does.>
+# Finds and repairs bad gate counts in patron count database.
 #    Copyright (C) 2016  Andrew Nisbet
 #
 # This program is free software; you can redistribute it and/or modify
@@ -66,8 +66,8 @@ my $GATE_TABLE = "gate_info";
 # | Comment  | varchar(120) | YES  |     | NULL              |                |
 # +----------+--------------+------+-----+-------------------+----------------+
 my $LANDS_TABLE        = "lands";
-my $MSG_DATE           = $DATE;
-my $MESSAGE            = "Estimated based on previous 4 week days. $MSG_DATE";
+chomp( my $MSG_DATE    = `date +%Y-%m-%d` );
+my $MESSAGE            = "Estimate based on previous 4 week days. $MSG_DATE";
 
 #
 # Message about this program and how to use it.
@@ -76,13 +76,13 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-adtUu<branch>tx]
+	usage: $0 [-adim<comment>tUu<branch>tx]
 Usage notes for gatecountaudit.pl.
 
  -a: Audit the database for broken entries and report don't fix anything. (See -u and -U).
  -d: Turn on debugging.
- -l<n>: Optional limit repairs to first 'n' errors, where n is a positive integer, minimum of 1 will 
-     be repaired even if 0 is selected. Default, no limit - fix them all.
+ -i: Interactive mode. Will ask before performing each repair. 
+ -m<message>: Change the comment message from the default: '$MESSAGE'.
  -t: Preserve temporary files in $TEMP_DIR.
  -U: Repair all broken entries for all the gates.
  -u<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
@@ -238,13 +238,13 @@ sub repair_branch_counts( $ )
 	# the previous 28 days worth of entries which will necessarily include the last 4 week
 	# days prior to the day the error occured.
 	# This finds all the network errors for a given branch.
-	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by Id;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -L2-`;
+	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -L2-`;
 	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
 	$results = `cat $branch_errors | $PIPE -W'\\s+' -oc0 -L2-`;
 	my $branch_error_Ids = create_tmp_file( "gatecountaudit_branch_error_Ids", $results );
+	return $repair_count if ( ! -s $branch_error_Ids );
 	# Open that tmp file and read line by line the Ids then fix them.
 	open ID_FILE, "<$branch_error_Ids" or die "** error expected a temp file of Ids that have errors for $branch, $!\n";
-	my $loops = 1; # Controls the limit of number of repairs if set and compared to '-l'.
 	while (<ID_FILE>)
 	{
 		chomp( my $primary_key_Id = $_ );
@@ -285,7 +285,7 @@ sub repair_branch_counts( $ )
 		# the data should smooth naturally as as repair older entries then newer ones.
 		# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
-		$results = `echo 'select * from $LANDS_TABLE where Id<=$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
+		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
 		$results = `cat $branch_all_previous_month_counts | $PIPE -Lskip7`;
 		my $branch_previous_count_samples = create_tmp_file( "gatecountaudit_prev_count_samples", $results );
@@ -295,17 +295,12 @@ sub repair_branch_counts( $ )
 		# 9947|2014-03-28|23:58:01|WMC|1272|NULL
 		# Now pipe can take an average and report to STDERR. We don't need the results from STDOUT.
 		`cat $branch_previous_count_samples | $PIPE -vc4 2>err.txt`;
+		last if ( ! -e "err.txt" );
 		# Now parse the STDERR report.
 		$results = `cat err.txt | $PIPE -W'\\s+' -oc1 -g'c1:\\d+'`;
 		if ( -e "err.txt" )
 		{
 			unlink "err.txt" ;
-		}
-		else
-		{
-			# there is no err.txt file that means the computation of the average over the month failed. Exit.
-			printf STDERR "** error, expected pipe.pl error file to compute averages but none found.\n";
-			exit;
 		}
 		chomp( $results );
 		return $repair_count if ( ! $results );
@@ -316,12 +311,16 @@ sub repair_branch_counts( $ )
 			printf STDERR "* warning, cowardly refusing to update $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
 			continue;
 		}
-		# Updating then becomes 
 		printf STDERR "updating $branch count, Id %s with %s\n", $primary_key_Id, $average_previous_days;
-		# update lands set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;
+		if ( $opt{'i'} )
+		{
+			printf STDERR "do you want to continue? ";
+			my $answer = <>;
+			next if ( $answer =~ m/(n|N)/ );
+		}
+		# Updating then becomes 
+		`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" >>update_err.txt`;
 		$repair_count++;
-		last if ( defined $opt{'l'} and $loops >= $opt{'l'} );
-		$loops++;
 	}
 	close ID_FILE;
 	return $repair_count;
@@ -347,14 +346,9 @@ sub do_audit()
 # return: 
 sub init
 {
-    my $opt_string = 'adl:m:tUu:x';
+    my $opt_string = 'adim:tUu:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
-	if ( defined $opt{'l'} and $opt{'l'} !~ m/^\d+$/ )
-	{
-		printf STDERR "** error limit must be a positive integer, recieved '%s'.\n", $opt{'l'};
-		usage();
-	}
 	read_password( $PASSWORD_FILE );
 	printf STDERR "Database: %s, Password: '********', Login: %s.\n", $DATABASE, $USER if ( $opt{'d'} );
 	if ( $opt{'m'} )
