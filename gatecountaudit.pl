@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.3 - Fix loop bug. 
 #          0.2 - Repair (-R) tested add audit - find missing entries. 
 #          0.1 - Repair (-r) tested. 
 #
@@ -34,7 +35,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.2};
+my $VERSION            = qq{0.3};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
