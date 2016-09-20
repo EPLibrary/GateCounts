@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.2 - Repair (-R) tested add audit - find missing entries. 
 #          0.1 - Repair (-r) tested. 
 #
 ####################################################
@@ -33,7 +34,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.1};
+my $VERSION            = qq{0.2};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -300,17 +301,21 @@ sub repair_incomplete_polling_results( $ )
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
 		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD" | $PIPE -W'\\s+' -L2-`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
-		last if ( ! -s $branch_all_previous_month_counts );
+		next if ( ! -s $branch_all_previous_month_counts );
 		$results = `cat $branch_all_previous_month_counts | $PIPE -Lskip7`;
 		my $branch_previous_count_samples = create_tmp_file( "gatecountaudit_prev_count_samples", $results );
-		last if ( ! -s $branch_previous_count_samples );
+		if ( ! -s $branch_previous_count_samples )
+		{
+			printf STDERR "* warning, unable to collect enough data to estimate counts for %s.\n", $branch;
+			next;
+		}
 		# 10283|2014-04-18|23:58:01|WMC|0|NULL
 		# 10171|2014-04-11|23:58:01|WMC|1024|NULL
 		# 10059|2014-04-04|23:58:01|WMC|1417|NULL
 		# 9947|2014-03-28|23:58:01|WMC|1272|NULL
 		# Now pipe can take an average and report to STDERR. We don't need the results from STDOUT.
 		`cat $branch_previous_count_samples | $PIPE -vc4 2>err.txt`;
-		last if ( ! -e "err.txt" );
+		next if ( ! -e "err.txt" );
 		# Now parse the STDERR report.
 		$results = `cat err.txt | $PIPE -W'\\s+' -oc1 -g'c1:\\d+'`;
 		if ( -e "err.txt" )
@@ -355,6 +360,9 @@ sub do_audit()
 	foreach my $branch ( @branches )
 	{
 		printf STDERR "branch ->%s\n", $branch if ( $opt{'d'} );
+		# Select all the entries for this branch by date range.
+		my $results = `echo 'select * from lands where Branch="$branch" and Total<0;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		printf "%s", $results;
 	}
 }
 
@@ -376,24 +384,18 @@ sub init
 }
 
 init();
-my $is_audited = 0;
 my $repairs    = 0;
 ### code starts
 if ( $opt{'a'} )
 {
 	do_audit();
-	$is_audited++;
 }
 if ( $opt{'r'} )
 {
-	do_audit() if ( ! $is_audited );
-	$is_audited++;
 	$repairs += repair_branch_counts( $opt{'r'} );
 }
 if ( $opt{'R'} )
 {
-	do_audit() if ( ! $is_audited );
-	$is_audited++;
 	my @all_branches = get_all_branches();
 	foreach my $branch ( @all_branches )
 	{
