@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.3.01 - Fix usage. 
 #          0.3 - Fix loop bug. 
 #          0.2 - Repair (-R) tested add audit - find missing entries. 
 #          0.1 - Repair (-r) tested. 
@@ -35,7 +36,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.3};
+my $VERSION            = qq{0.3.01};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -81,7 +82,7 @@ sub usage()
 	usage: $0 [-adim<comment>tRr<branch>tx]
 $0 audits and repairs gate counts. The patron count database ocassional.
 
- -a: Audit the database for broken entries and report don't fix anything. (See -u and -U).
+ -a: Audit the database for broken entries and report don't fix anything.
  -d: Turn on debugging.
  -i: Interactive mode. Will ask before performing each repair. 
  -m<message>: Change the comment message from the default: '$MESSAGE'.
