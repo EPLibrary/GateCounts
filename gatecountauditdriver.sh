@@ -6,6 +6,7 @@
 ##########################################################
 ADDRESSES=anisbet\@epl.ca
 HOME_DIR=/home/ilsdev/projects/gatecountaudit
+cd $HOME_DIR
 if [ -s $HOME_DIR/gatecountaudit.pl ]
 then
 	$HOME_DIR/gatecountaudit.pl -R >log.txt 2>&1
