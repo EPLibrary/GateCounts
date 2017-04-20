@@ -72,7 +72,7 @@ my $GATE_TABLE = "gate_info";
 # +----------+--------------+------+-----+-------------------+----------------+
 my $LANDS_TABLE        = "lands";
 chomp( my $MSG_DATE    = `date +%Y-%m-%d` );
-my $MESSAGE            = "Estimate based on previous 4 week days. $MSG_DATE";
+my $MESSAGE            = "Estimate based on counts collected from the same weekday of the previous 4 weeks. $MSG_DATE";
 
 #
 # Message about this program and how to use it.
@@ -81,7 +81,7 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-adim<comment>tRr<branch>tx]
+	usage: $0 [-adh<"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]">im<comment>tRr<branch>tx]
 $0 audits and repairs gate counts. The patron count database ocassionally will
 fail to report in or include bogus gate counts. This script is designed to detect
 and repair this issue.
@@ -392,14 +392,17 @@ sub get_branch_counts_by_date( $ )
 		printf STDERR "** error: invalid start date provided '%s'.\n", $start_date;
 		usage();
 	}
-	if ( defined $end_date && $end_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+	if ( $end_date )
 	{
-		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
-	}
-	else
-	{
-		printf STDERR "** error: invalid end date provided '%s'.\n", $end_date;
-		usage();
+		if ( $end_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+		{
+			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		}
+		else
+		{
+			printf STDERR "** error: invalid end date provided '%s'.\n", $end_date;
+			usage();
+		}
 	}
 	printf "%s", $results;
 }
