@@ -24,6 +24,8 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.4.0 - Added holiday checking for gates that are 
+#                  artificially reporting high counts on closed days. 
 #          0.3.01 - Fix usage. 
 #          0.3 - Fix loop bug. 
 #          0.2 - Repair (-R) tested add audit - find missing entries. 
@@ -36,7 +38,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.3.01};
+my $VERSION            = qq{0.4.0};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -80,10 +82,14 @@ sub usage()
     print STDERR << "EOF";
 
 	usage: $0 [-adim<comment>tRr<branch>tx]
-$0 audits and repairs gate counts. The patron count database ocassional.
+$0 audits and repairs gate counts. The patron count database ocassionally will
+fail to report in or include bogus gate counts. This script is designed to detect
+and repair this issue.
 
  -a: Audit the database for broken entries and report don't fix anything.
  -d: Turn on debugging.
+ -h"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]": Check date range for a specific branch. -h "CLV 2017-04-13 2017-04-20"
+    The last date value is optional and will produce output for all dates since start date.
  -i: Interactive mode. Will ask before performing each repair. 
  -m<message>: Change the comment message from the default: '$MESSAGE'.
  -t: Preserve temporary files in $TEMP_DIR.
@@ -352,7 +358,6 @@ sub repair_incomplete_polling_results( $ )
 
 # Audits the database for missing data. Specificially the LANDS table is checked for 
 # negative values that indicate a given gate could not be reached at the time of checkin.
-# The 
 # param:  none
 # return: none
 sub do_audit()
@@ -368,12 +373,43 @@ sub do_audit()
 	}
 }
 
+# Reports gate counts from a specific day. This can be used as a spot check.
+# param:  branch code like 'CLV' start date <yyyy-mm-dd> optional end date <yyyy-mm-dd> "CLV 2017-04-13 2017-04-20".
+# return: none
+sub get_branch_counts_by_date( $ )
+{
+	# Check the date submitted for conformance with 'yyyy-mm-dd' format.
+	my ( $branch, $start_date, $end_date ) = split '\s+', shift;
+	printf "branch ->%s\n", $branch if ( $opt{'d'} );
+	# Select all the entries for this branch by date range.
+	my $results = '';
+	if ( $start_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+	{
+		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	}
+	else
+	{
+		printf STDERR "** error: invalid start date provided '%s'.\n", $start_date;
+		usage();
+	}
+	if ( defined $end_date && $end_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+	{
+		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	}
+	else
+	{
+		printf STDERR "** error: invalid end date provided '%s'.\n", $end_date;
+		usage();
+	}
+	printf "%s", $results;
+}
+
 # Kicks off the setting of various switches.
 # param:  
 # return: 
 sub init
 {
-    my $opt_string = 'adim:tRr:x';
+    my $opt_string = 'adh:im:tRr:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
 	read_password( $PASSWORD_FILE );
@@ -391,6 +427,12 @@ my $repairs    = 0;
 if ( $opt{'a'} )
 {
 	do_audit();
+}
+if ( $opt{'h'} )
+{
+	# Check a specific day for high counts, these gates may need to be cleaned or checked if 
+	# the gate reads large values on days when the branch is closed.
+	get_branch_counts_by_date( $opt{'h'} );
 }
 if ( $opt{'r'} )
 {
