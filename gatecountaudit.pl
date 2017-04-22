@@ -24,8 +24,9 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
-#          0.4.0 - Added holiday checking for gates that are 
-#                  artificially reporting high counts on closed days. 
+#          0.6.0 - Compute standard deviation of gate counts from a branch over a date range. 
+#          0.5.0 - Reset gate ('-f') added to force counts for a branch to be recalculated. 
+#          0.4.0 - Report counts for a specific branch within a date range ('-h'). 
 #          0.3.01 - Fix usage. 
 #          0.3 - Fix loop bug. 
 #          0.2 - Repair (-R) tested add audit - find missing entries. 
@@ -38,7 +39,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.4.0};
+my $VERSION            = qq{0.6.0};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -73,6 +74,7 @@ my $GATE_TABLE = "gate_info";
 my $LANDS_TABLE        = "lands";
 chomp( my $MSG_DATE    = `date +%Y-%m-%d` );
 my $MESSAGE            = "Estimate based on counts collected from the same weekday of the previous 4 weeks. $MSG_DATE";
+my $RESET_COMMENT      = "Total for this day forced to reset. $MSG_DATE";
 
 #
 # Message about this program and how to use it.
@@ -81,20 +83,28 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-adh<"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]">im<comment>tRr<branch>tx]
+	usage: $0 [-ac"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]"df"<BRA> <ID_#>"im<comment>tRr<branch>tx]
 $0 audits and repairs gate counts. The patron count database ocassionally will
 fail to report in or include bogus gate counts. This script is designed to detect
 and repair this issue.
 
  -a: Audit the database for broken entries and report don't fix anything.
- -d: Turn on debugging.
- -h"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]": Check date range for a specific branch. -h "CLV 2017-04-13 2017-04-20"
+ -c"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]": Check date range for a specific branch. -h "CLV 2017-04-13 2017-04-20"
     The last date value is optional and will produce output for all dates since start date.
+ -d: Turn on debugging.
+ -f"<BRA> <ID>": Forces a branch's counts to be set to -1 for a entry in the lands table. This
+    will trigger a recalculation of the counts the next time gates are repaired. See '-r'
+    and '-R' for more information. A message will also be put in the comment field. To find
+    a specific id see '-c'.	
+    Example of use: -f "CLV 225"
  -i: Interactive mode. Will ask before performing each repair. 
  -m<message>: Change the comment message from the default: '$MESSAGE'.
  -t: Preserve temporary files in $TEMP_DIR.
  -R: Repair all broken entries for all the gates.
  -r<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
+ -s"<BRA> <YYYY-MM-DD> <YYYY-MM-DD>": Reports the standard deviation of a given branch over a given time.
+     All values are required.
+ -S"<YYYY-MM-DD> <YYYY-MM-DD>": Same as '-s' but for all branches.
  -x: This (help) message.
 
 example:
@@ -381,9 +391,8 @@ sub get_branch_counts_by_date( $ )
 	# Check the date submitted for conformance with 'yyyy-mm-dd' format.
 	my ( $branch, $start_date, $end_date ) = split '\s+', shift;
 	printf "branch ->%s\n", $branch if ( $opt{'d'} );
-	# Select all the entries for this branch by date range.
 	my $results = '';
-	if ( $start_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 	{
 		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
 	}
@@ -394,7 +403,7 @@ sub get_branch_counts_by_date( $ )
 	}
 	if ( $end_date )
 	{
-		if ( $end_date =~ m/\d{4}\-\d{2}\-\d{2}/ )
+		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 		{
 			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
 		}
@@ -407,12 +416,38 @@ sub get_branch_counts_by_date( $ )
 	printf "%s", $results;
 }
 
+# Resets gate counts in the lands table for a specific day, and adds a comment to that affect in the comments field.
+# When '-r', or '-R' are rerun the gate counts for that day will be estimated.
+# param:  branch code like 'CLV' start date <yyyy-mm-dd> like "CLV 2017-04-13".
+# return: none
+sub reset_branch_counts_by_date( $ )
+{
+	# Check the date submitted for conformance with 'yyyy-mm-dd' format.
+	my ( $branch, $lands_id ) = split '\s+', shift;
+	printf "branch ->%s\n", $branch if ( $opt{'d'} );
+	printf "lands_id ->%s\n", $lands_id if ( $opt{'d'} );
+	my $results = '';
+	if ( $lands_id =~ m/^\d{3,}$/ )
+	{
+		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		my $query = sprintf "update lands set Total=-1, Comment='%s' where Branch='%s' and Id=%d;", $RESET_COMMENT, $branch, $lands_id;
+		printf "query ->%s\n", $query if ( $opt{'d'} );
+		$results = `echo "$query" | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	}
+	else
+	{
+		printf STDERR "** error: invalid lands table Id provided '%s'.\n", $lands_id;
+		usage();
+	}
+	printf "%s", $results;
+}
+
 # Kicks off the setting of various switches.
 # param:  
 # return: 
 sub init
 {
-    my $opt_string = 'adh:im:tRr:x';
+    my $opt_string = 'ac:df:im:tRr:s:S:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
 	read_password( $PASSWORD_FILE );
@@ -424,6 +459,69 @@ sub init
 	}
 }
 
+# Computes standard deviation of a argument list.
+# param:  list of values.
+# return: standard deviation of supplied values.
+sub compute_stddev
+{
+	my @sample = @_;
+	my $count  = scalar @sample;
+	my $sum    = 0;
+	return 0 if ( $count == 0 ); # No counts for this branch in the specified date range.
+	foreach my $i ( @sample )
+	{
+		next if ( $i !~ m/^(\-)?\d+(\.\d+)?$/ );
+		$sum += $i;
+	}
+	my $avg = $sum / $count;
+	printf STDERR "average: '%s'/'%s' = '%s'\n", $sum, $count, $avg if ( $opt{'d'} );
+	$sum = 0;
+	foreach my $i ( @sample )
+	{
+		next if ( $i !~ m/^(\-)?\d+(\.\d+)?$/ );
+		$sum += (( $i - $avg ) ** 2);
+	}
+	my $variance = $sum / $count;
+	my $stddev   = sqrt $variance;
+	printf STDERR "variance: '%s' and stddev='%s'\n", $variance, $stddev if ( $opt{'d'} );
+	return $stddev;
+}
+
+# Compute the standard deviation of a given branch's.
+# param:  string of branch code (3 chars) and 2 dates that act as a range. Example: 
+# return: none.
+sub compute_branch_error( $ )
+{
+	# Check the date submitted for conformance with 'yyyy-mm-dd' format.
+	my ( $branch, $start_date, $end_date ) = split '\s+', shift;
+	printf "branch ->%s\n", $branch if ( $opt{'d'} );
+	my $results = '';
+	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
+	{
+		$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	}
+	else
+	{
+		printf STDERR "** error: invalid start date provided '%s'.\n", $start_date;
+		usage();
+	}
+	if ( $end_date )
+	{
+		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
+		{
+			$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+		}
+		else
+		{
+			printf STDERR "** error: invalid end date provided '%s'.\n", $end_date;
+			usage();
+		}
+	}
+	my @samples = split '\n', $results;
+	printf "%s: %8.2f\n", $branch, compute_stddev( @samples );
+}
+
+
 init();
 my $repairs    = 0;
 ### code starts
@@ -431,11 +529,15 @@ if ( $opt{'a'} )
 {
 	do_audit();
 }
-if ( $opt{'h'} )
+if ( $opt{'c'} )
 {
 	# Check a specific day for high counts, these gates may need to be cleaned or checked if 
 	# the gate reads large values on days when the branch is closed.
-	get_branch_counts_by_date( $opt{'h'} );
+	get_branch_counts_by_date( $opt{'c'} );
+}
+if ( $opt{'f'} )
+{
+	reset_branch_counts_by_date( $opt{'f'} );
 }
 if ( $opt{'r'} )
 {
@@ -447,6 +549,21 @@ if ( $opt{'R'} )
 	foreach my $branch ( @all_branches )
 	{
 		$repairs += repair_branch_counts( $branch );
+	}
+}
+if ( $opt{'s'} )
+{
+	compute_branch_error( $opt{'s'} );
+}
+if ( $opt{'S'} )
+{
+	my $results = `echo 'select GateId, Branch from gate_info;' | mysql -h mysql.epl.ca -u $USER -p $DATABASE --password="$PASSWORD"`;
+	my @branches =  get_all_branches();
+	foreach my $branch ( @branches )
+	{
+		printf STDERR "branch: '%s'\n", $branch if ( $opt{'d'} );
+		my $s = $branch . " " . $opt{'S'};
+		compute_branch_error( $s );
 	}
 }
 printf STDERR "Total repairs: %d\n", $repairs if ( $opt{'d'} );
