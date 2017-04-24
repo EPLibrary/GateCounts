@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.6.1 - Use absolute path to password file. 
 #          0.6.0 - Compute standard deviation of gate counts from a branch over a date range. 
 #          0.5.0 - Reset gate ('-f') added to force counts for a branch to be recalculated. 
 #          0.4.0 - Report counts for a specific branch within a date range ('-h'). 
@@ -39,13 +40,13 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.6.0};
+my $VERSION            = qq{0.6.1};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
 my @CLEAN_UP_FILE_LIST = (); # List of file names that will be deleted at the end of the script if ! '-t'.
 my $PIPE               = "/usr/local/sbin/pipe.pl";
-my $PASSWORD_FILE      = "password.txt";
+my $PASSWORD_FILE      = "/home/ilsdev/projects/gatecountaudit/password.txt";
 my $USER               = "";
 my $DATABASE           = "";
 my $PASSWORD           = "";
