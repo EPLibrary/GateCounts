@@ -31,7 +31,7 @@
 ########################################################################
 BRANCH=''
 VERSION="0.1.01"
-ADDRESSES="andrew.nisbet@epl.ca Leanne.Labossiere@EPL.CA"
+ADDRESSES="andrew.nisbet@epl.ca, Leanne.Labossiere@EPL.CA"
 
 ###############
 # Display usage message.
