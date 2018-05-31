@@ -24,14 +24,15 @@
 #
 #######################################################################
 #
-# outputs data for all the gates at a given branch into 1 spreadsheet.
+# outputs data for all the gates at a given branch into 1 spreadsheet
+# and mails the results to ILSadmins@epl.ca.
 #
-# Dependencies:
+# Dependencies: pipe.pl patroncount mailx uuencode
 #
 ########################################################################
 BRANCH=''
-VERSION="0.1.01"
-ADDRESSES="andrew.nisbet@epl.ca, Leanne.Labossiere@EPL.CA"
+VERSION="0.1.02"
+ADDRESSES="ilsadmins@epl.ca"
 
 ###############
 # Display usage message.
