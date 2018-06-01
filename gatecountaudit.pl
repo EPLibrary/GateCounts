@@ -72,7 +72,7 @@ my $LANDS_TABLE        = "lands";
 chomp( my $MSG_DATE    = `date +%Y-%m-%d` );
 my $MESSAGE            = "Estimate based on counts collected from the same weekday of the previous 4 weeks. $MSG_DATE";
 my $RESET_COMMENT      = "Total for this day forced to reset. $MSG_DATE";
-my $SET_TOTAL_COMMENT  = "Total for this day manually set. $MSG_DATE";
+my $SET_TOTAL_COMMENT  = "Total for this day manually set.";
 
 #
 # Message about this program and how to use it.
