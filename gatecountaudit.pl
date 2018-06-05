@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.7.1 - Fix double-pipe error in -R. 
 #          0.7.0 - Use absolute path to password file. 
 #          0.6.1 - Use absolute path to password file. 
 #          0.6.0 - Compute standard deviation of gate counts from a branch over a date range. 
@@ -241,7 +242,7 @@ sub repair_incomplete_polling_results( $ )
 	# the previous 28 days worth of entries which will necessarily include the last 4 week
 	# days prior to the day the error occured.
 	# This finds all the network errors for a given branch.
-	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' |  | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount | pipe.pl -L2-`;
+	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount | pipe.pl -L2-`;
 	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
 	return $repair_count if ( ! -s $branch_errors );
 	$results = `cat $branch_errors | pipe.pl -W'\\s+' -oc0 -L2-`;
@@ -330,7 +331,7 @@ sub repair_incomplete_polling_results( $ )
 				next if ( $answer =~ m/(n|N)/ );
 			}
 			# Updating then becomes 
-			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;'  | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N >>update_err.txt`;
+			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N >>update_err.txt`;
 			$repair_count++;
 		}
 	}
@@ -401,7 +402,7 @@ sub reset_branch_counts_by_date( $ )
 	my $results = '';
 	if ( $lands_id =~ m/^\d{3,}$/ )
 	{
-		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";'  | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 		my $query = sprintf "update lands set Total=-1, Comment='%s' where Branch='%s' and Id=%d;", $RESET_COMMENT, $branch, $lands_id;
 		printf "query ->%s\n", $query if ( $opt{'d'} );
 		$results = `echo "$query" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N"`;
