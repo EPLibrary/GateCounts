@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.7.2 - Fix date to today. 
 #          0.7.1 - Fix double-pipe error in -R. 
 #          0.7.0 - Use absolute path to password file. 
 #          0.6.1 - Use absolute path to password file. 
@@ -42,7 +43,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.7.0};
+my $VERSION            = qq{0.7.2};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -558,7 +559,7 @@ if ( $opt{'u'} )
 	$comment = $SET_TOTAL_COMMENT if ( ! defined $comment );
 	printf STDERR "%s %s %s %s\n", $branch, $date, $count, $comment;
 	# UPDATE lands SET Total=397,Comment="Value entered hand recorded values June 1, 2018" WHERE Id=38264;
-	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $date" WHERE Id=$entry_id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $MSG_DATE" WHERE Id=$entry_id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 	print `echo 'SELECT * FROM lands WHERE Id=$entry_id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount`;
 	$repairs++;
 }
