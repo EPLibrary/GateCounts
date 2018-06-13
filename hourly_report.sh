@@ -31,7 +31,7 @@
 #
 ########################################################################
 BRANCH=''
-VERSION="0.1.02"
+VERSION="0.2.00"
 ADDRESSES="ilsadmins@epl.ca"
 
 ###############
@@ -62,8 +62,7 @@ while getopts ":b:d:x" opt; do
 	d)	echo "-d triggered with date time of '$OPTARG'" >&2
 		START_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc0,c1 -h' ')
 		END_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc2,c3 -h' ')
-		echo "Start timestamp: '$START_TIMESTAMP'" >&2
-		echo "End timestamp: '$END_TIMESTAMP'" >&2
+		echo "Timestamp range: '$START_TIMESTAMP' - '$END_TIMESTAMP'" >&2
 		;;
 	x)	usage
 		;;
@@ -83,9 +82,9 @@ done
 echo "" >gatedata.$BRANCH.csv
 for gate_id in $(echo "select GateId from gate_info  where Branch='$BRANCH';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N); do
 	# https://unix.stackexchange.com/questions/205180/how-to-pass-password-to-mysql-command-line
-	echo "select GateId, DateTime, InCount, OutCount from patron_count where GateId=$gate_id and DateTime>='$START_TIMESTAMP' and DateTime<='$END_TIMESTAMP';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N | pipe.pl -W'\s+' -Tcsv:"Gate,Date,Time,In,Out,$START_TIMESTAMP - $END_TIMESTAMP" >>gatedata.$BRANCH.csv
+	# echo "select GateId, DateTime, InCount, OutCount from patron_count where GateId=$gate_id and DateTime>='$START_TIMESTAMP' and DateTime<='$END_TIMESTAMP';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N | pipe.pl -W'\s+' -Tcsv:"Gate,Date,Time,In,Out,$START_TIMESTAMP - $END_TIMESTAMP" >>gatedata.$BRANCH.csv
+	echo "select GateId, DateTime, InCount, OutCount from patron_count where GateId=$gate_id and DateTime>='$START_TIMESTAMP' and DateTime<='$END_TIMESTAMP';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N | pipe.pl -W'\s+' -?add:c3,c4 | pipe.pl -4c0 | pipe.pl -dc1 -Jc0 -P -L2- -oc2,c0 -Tcsv:"Gate,Total Traffic,$START_TIMESTAMP - $END_TIMESTAMP" >>gatedata.$BRANCH.csv
 done
-
 echo "emailing: $ADDRESSES" >&2
 uuencode gatedata.$BRANCH.csv gatedata.$BRANCH.csv | mailx -a'From:ilsdev@ilsdev1.epl.ca' -s"$BRANCH gate data $START_TIMESTAMP - $END_TIMESTAMP" "$ADDRESSES"
 # EOF
