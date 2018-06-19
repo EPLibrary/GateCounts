@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev: 
+#          0.7.3 - Fix date to today. 
 #          0.7.2 - Fix date to today. 
 #          0.7.1 - Fix double-pipe error in -R. 
 #          0.7.0 - Use absolute path to password file. 
@@ -43,7 +44,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.7.2};
+my $VERSION            = qq{0.7.3};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -105,8 +106,9 @@ and repair this issue.
      All values are required.
  -S"<YYYY-MM-DD> <YYYY-MM-DD>": Same as '-s' but for all branches.
  -t: Preserve temporary files in $TEMP_DIR.
- -u{BRA date count comment}: Update a specific date for a specific branch. All fields are required and
-   there must already be an existing entry for the branch on the date specified.
+ -u{BRA date count [comment]}: Update a specific date for a specific branch. Branch, Date, and count
+   are required, but if the comment is omitted, the message 'Total for this day manually set. \$TODAY'.
+   There must already be an existing entry for the branch on the date specified.
  -x: This (help) message.
 
 example:
