@@ -31,7 +31,7 @@
 #
 ########################################################################
 BRANCH=''
-VERSION="0.2.01"
+VERSION="0.3.00"
 ADDRESSES="ilsadmins@epl.ca"
 
 ###############
@@ -40,20 +40,28 @@ ADDRESSES="ilsadmins@epl.ca"
 # return: none
 usage()
 {
-	echo "Usage: $0 [-options]" >&2
-	echo " Outputs all the gate count data for all the gates at a given branch," >&2
-	echo " and emails the results." >&2
-	echo " -b{branch} - 3 character branch code, case insensitive." >&2
-	echo " -d'{start} {end}' - Defines a given date range. Date format 'yyyy-mm-dd hh:mm:ss'." >&2
-	echo " -x - Show this message." >&2
-	echo " " >&2 
-	echo " Examples of valid input:" >&2
-	echo "   $0 -bwmc -d'2018-03-01 09:20:00 2018-03-12 21:05:00'" >&2
-	echo "   Version: $VERSION" >&2
-	exit 1
+    echo "Usage: $0 [-options]" >&2
+    echo " Outputs all the gate count data for all the gates at a given branch," >&2
+    echo " and emails the results." >&2
+    echo " -b{branch} - 3 character branch code, case insensitive." >&2
+    echo " -d'{start} {end}' Defines a given date range. Date format 'yyyy-mm-dd hh:mm:ss'." >&2
+    echo " -h'{date} {hour}' Request a report for a single hour of a given day." >&2
+    echo "  Format 'yyyy-mm-dd hh' where results will be output starting at 'hh[:mm]'" >&2
+    echo "  and continues for the next 64 minutes." >&2
+    echo " -m'{date} {hour}:{minute}' Request a report for a single hour of a given day." >&2
+    echo "  Format 'yyyy-mm-dd hh:mm' where results will be output starting at 'hh:mm'" >&2
+    echo "  and continues for the next 64 minutes." >&2
+    echo " -x - Show this message." >&2
+    echo " " >&2 
+    echo " Examples of valid input:" >&2
+    echo "   $0 -bwmc -d'2018-03-01 09:20:00 2018-03-12 21:05:00'" >&2
+    echo "   $0 -bCAL -h'2018-03-16 09'" >&2
+    echo "   $0 -briv -m'2018-03-27 09:30'" >&2
+    echo "   Version: $VERSION" >&2
+    exit 1
 }
 
-while getopts ":b:d:x" opt; do
+while getopts ":b:d:h:m:x" opt; do
   case $opt in
 	b)	echo "-b triggered with '$OPTARG'" >&2
 		BRANCH=$(echo "$OPTARG" | pipe.pl -ec0:uc -oc0)
@@ -64,6 +72,22 @@ while getopts ":b:d:x" opt; do
 		END_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc2,c3 -h' ')
 		echo "Timestamp range: '$START_TIMESTAMP' - '$END_TIMESTAMP'" >&2
 		;;
+    h)	echo "-h triggered with date time of '$OPTARG'" >&2
+        # '2018-03-01 09:20:00 2018-03-12 21:05:00'
+        START_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc0,c1 -h' ' -mc1:"##\:00:00")
+        END_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc0,c1 -h' ' -1c1 -mc1:"##\:04:00")
+        echo "Timestamp range: '$START_TIMESTAMP' - '$END_TIMESTAMP'" >&2
+        ;;
+    m)	echo "-m triggered with date time of '$OPTARG'" >&2
+        # '2018-03-01 09:20:00 2018-03-12 21:05:00'
+        START_TIMESTAMP=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc0,c1 -h' ' -mc1:"#####\:00")
+        # '2018-03-01 05:15' => '2018-03-01'
+        my_end_date=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc0)
+        # '2018-03-01 05:15' => '06:15:00'
+        my_end_time=$(echo "$OPTARG" | pipe.pl -W'\s+' -oc1 | pipe.pl -W':' -1c0 -h: -mc2:"20")
+        END_TIMESTAMP="$my_end_date $my_end_time"
+        echo "Timestamp range: '$START_TIMESTAMP' - '$END_TIMESTAMP'" >&2
+        ;;
 	x)	usage
 		;;
 	\?)	echo "Invalid option: -$OPTARG" >&2
