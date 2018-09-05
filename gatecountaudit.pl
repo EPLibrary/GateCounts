@@ -44,7 +44,7 @@ use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
 
-my $VERSION            = qq{0.7.3};
+my $VERSION            = qq{0.7.4};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -408,7 +408,7 @@ sub reset_branch_counts_by_date( $ )
 		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 		my $query = sprintf "update lands set Total=-1, Comment='%s' where Branch='%s' and Id=%d;", $RESET_COMMENT, $branch, $lands_id;
 		printf "query ->%s\n", $query if ( $opt{'d'} );
-		$results = `echo "$query" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N"`;
+		$results = `echo "$query" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 	}
 	else
 	{
