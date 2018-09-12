@@ -551,7 +551,7 @@ if ( $opt{'u'} )
 	}
 	# Now add them but make sure there is an entry for that branch and date.
 	my $date_search = $date . '%';
-	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 	chomp $entry_id;
 	if ( ! defined $entry_id )
 	{
