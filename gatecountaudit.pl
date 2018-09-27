@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
-####################################################
+###############################################################################
 #
-# Perl source file for project gatecountaudit 
+# Perl source file for project gatecountaudit
 #
 # Finds and repairs bad gate counts in patron count database.
 #    Copyright (C) 2016  Andrew Nisbet
@@ -10,12 +10,12 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation; either version 2 of the License, or
 # (at your option) any later version.
-# 
+#
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 # GNU General Public License for more details.
-# 
+#
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
@@ -23,21 +23,26 @@
 #
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
-# Rev: 
-#          0.7.3 - Fix date to today. 
-#          0.7.2 - Fix date to today. 
-#          0.7.1 - Fix double-pipe error in -R. 
-#          0.7.0 - Use absolute path to password file. 
-#          0.6.1 - Use absolute path to password file. 
-#          0.6.0 - Compute standard deviation of gate counts from a branch over a date range. 
-#          0.5.0 - Reset gate ('-f') added to force counts for a branch to be recalculated. 
-#          0.4.0 - Report counts for a specific branch within a date range ('-h'). 
-#          0.3.01 - Fix usage. 
-#          0.3 - Fix loop bug. 
-#          0.2 - Repair (-R) tested add audit - find missing entries. 
-#          0.1 - Repair (-r) tested. 
+# Rev:
+#          0.7.4 - Fix -u to add comment strings without requiring
+#                  special quoting.
+#          0.7.3 - Fix date to today.
+#          0.7.2 - Fix date to today.
+#          0.7.1 - Fix double-pipe error in -R.
+#          0.7.0 - Use absolute path to password file.
+#          0.6.1 - Use absolute path to password file.
+#          0.6.0 - Compute standard deviation of gate counts from a branch 
+#                  over a date range.
+#          0.5.0 - Reset gate ('-f') added to force counts for a branch
+#                  to be recalculated.
+#          0.4.0 - Report counts for a specific branch within a date
+#                  range ('-h').
+#          0.3.01 - Fix usage.
+#          0.3 -   Fix loop bug.
+#          0.2 -   Repair (-R) tested add audit - find missing entries.
+#          0.1 -   Repair (-r) tested.
 #
-####################################################
+###############################################################################
 
 use strict;
 use warnings;
@@ -96,9 +101,9 @@ and repair this issue.
  -f"<BRA> <ID>": Forces a branch's counts to be set to -1 for a entry in the lands table. This
     will trigger a recalculation of the counts the next time gates are repaired. See '-r'
     and '-R' for more information. A message will also be put in the comment field. To find
-    a specific id see '-c'.	
+    a specific id see '-c'.
     Example of use: -f "CLV 225"
- -i: Interactive mode. Will ask before performing each repair. 
+ -i: Interactive mode. Will ask before performing each repair.
  -m<message>: Change the comment message from the default: '$MESSAGE'.
  -R: Repair all broken entries for all the gates.
  -r<branch>: Repair broken entries for a specific branches' gates. Processes all the gates at the branch.
@@ -106,13 +111,17 @@ and repair this issue.
      All values are required.
  -S"<YYYY-MM-DD> <YYYY-MM-DD>": Same as '-s' but for all branches.
  -t: Preserve temporary files in $TEMP_DIR.
- -u{BRA date count [comment]}: Update a specific date for a specific branch. Branch, Date, and count
+ -u"BRA date count [comment string]": Update a specific date for a specific branch. Branch, Date, and count
    are required, but if the comment is omitted, the message 'Total for this day manually set. \$TODAY'.
    There must already be an existing entry for the branch on the date specified.
  -x: This (help) message.
 
 example:
   $0 -x
+  $0 -u"HVY 2018-09-02 0 Stat holiday."  # Update HVY's count for Sept. 2 to 0 because it was a stat holiday.
+  $0 -c"HVY 2018-08-18 2018-09-03"       # Check the HVY counts from 2018-08-18 to 2018-09-03
+  $0 -f"HVY 40816"                       # Reset the count for HVY's DB entry ID No. 40816
+  $0 -rHVY                               # Find any reset values for HVY and estimate what the count should be.
 Version: $VERSION
 EOF
     exit;
@@ -148,7 +157,7 @@ sub create_tmp_file( $$ )
 	my $name    = shift;
 	my $results = shift;
 	my $sequence= sprintf "%02d", scalar @CLEAN_UP_FILE_LIST;
-	my $master_file = "$TEMP_DIR/$name.$sequence.$DATE.$TIME"; 
+	my $master_file = "$TEMP_DIR/$name.$sequence.$DATE.$TIME";
 	# Return just the file name if there are no results to report.
 	return $master_file if ( ! $results );
 	open FH, ">$master_file" or die "*** error opening '$master_file', $!\n";
@@ -162,10 +171,10 @@ sub create_tmp_file( $$ )
 ### Note: not used, but intended for profiling errors on specific gates. Coming soon.
 ###
 # Returns the gate IDs for a named branch. The branch can be upper or lower case, and need
-# not include the EPL prefix, that is branches are looked up by last three letters of the 
+# not include the EPL prefix, that is branches are looked up by last three letters of the
 # branches' code. Example EPLMNA can be submitted as EPLMNA, eplmna, MNA, or mna.
 # param:  string code for the branch. If the argument is empty, all the branches are returned.
-# return: Array of gate IDs for the branch or an empty list if the branch is misspelled or 
+# return: Array of gate IDs for the branch or an empty list if the branch is misspelled or
 #         doesn't exist in the database.
 sub get_gate_IDs( $ )
 {
@@ -188,7 +197,7 @@ sub get_gate_IDs( $ )
 	{
 		$results = `echo "select GateId from $GATE_TABLE where Branch='$branch';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 	}
-	printf STDERR "Search for branch submitted.\n%s", $results if ( $opt{'d'} );	
+	printf STDERR "Search for branch submitted.\n%s", $results if ( $opt{'d'} );
 	my @ids = split '\n', $results;
 	# remove the header from the returned table that describes the columns.
 	shift @ids if ( @ids );
@@ -208,7 +217,7 @@ sub get_all_branches()
 }
 
 # Repairs any erroneous entries for a given branch. This function makes repairs to the LANDS table
-# which contains aggregate data from all gates at a given branch for a specific date. 
+# which contains aggregate data from all gates at a given branch for a specific date.
 # TODO define error types fully. Example find entries that are -1, those indicate that there was
 # a hardware or network error at the time of polling. Other errors are more subtle. A regular gate
 # count appearing on a date that is marked as a branch holiday indicates artificially high readings.
@@ -289,7 +298,7 @@ sub repair_incomplete_polling_results( $ )
 		# |  9947 | 2014-03-28 23:58:01 | WMC    |  1272 | NULL    |
 		# |  9931 | 2014-03-27 23:58:02 | WMC    |  1390 | NULL    | <- Previous Sunday
 		# +-------+---------------------+--------+-------+---------+
-		# Note that some of the selections will eventually use an average estimate in it's own estimate but 
+		# Note that some of the selections will eventually use an average estimate in it's own estimate but
 		# the data should smooth naturally as as repair older entries then newer ones.
 		# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
@@ -333,7 +342,7 @@ sub repair_incomplete_polling_results( $ )
 				my $answer = <>;
 				next if ( $answer =~ m/(n|N)/ );
 			}
-			# Updating then becomes 
+			# Updating then becomes
 			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N >>update_err.txt`;
 			$repair_count++;
 		}
@@ -342,7 +351,7 @@ sub repair_incomplete_polling_results( $ )
 	return $repair_count;
 }
 
-# Audits the database for missing data. Specificially the LANDS table is checked for 
+# Audits the database for missing data. Specificially the LANDS table is checked for
 # negative values that indicate a given gate could not be reached at the time of checkin.
 # param:  none
 # return: none
@@ -419,8 +428,8 @@ sub reset_branch_counts_by_date( $ )
 }
 
 # Kicks off the setting of various switches.
-# param:  
-# return: 
+# param:
+# return:
 sub init
 {
     my $opt_string = 'ac:df:im:Rr:s:S:tu:x';
@@ -462,7 +471,7 @@ sub compute_stddev
 }
 
 # Compute the standard deviation of a given branch's.
-# param:  string of branch code (3 chars) and 2 dates that act as a range. Example: 
+# param:  string of branch code (3 chars) and 2 dates that act as a range. Example:
 # return: none.
 sub compute_branch_error( $ )
 {
@@ -505,7 +514,7 @@ if ( $opt{'a'} )
 }
 if ( $opt{'c'} )
 {
-	# Check a specific day for high counts, these gates may need to be cleaned or checked if 
+	# Check a specific day for high counts, these gates may need to be cleaned or checked if
 	# the gate reads large values on days when the branch is closed.
 	get_branch_counts_by_date( $opt{'c'} );
 }
@@ -543,7 +552,8 @@ if ( $opt{'S'} )
 if ( $opt{'u'} )
 {
 	# -u{BRA date count comment}
-	my ( $branch, $date, $count, $comment ) = split '\s+', $opt{'u'};
+	my ( $branch, $date, $count, @comment_words ) = split '\s+', $opt{'u'};
+    my $comment = join( ' ', @comment_words );
 	if ( ! defined $branch || ! defined $date || ! defined $count )
 	{
 		printf STDERR "** error one or more fields are empty.\n";
