@@ -254,10 +254,10 @@ sub repair_incomplete_polling_results( $ )
 	# the previous 28 days worth of entries which will necessarily include the last 4 week
 	# days prior to the day the error occured.
 	# This finds all the network errors for a given branch.
-	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount | pipe.pl -L2-`;
+	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
 	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
 	return $repair_count if ( ! -s $branch_errors );
-	$results = `cat $branch_errors | pipe.pl -W'\\s+' -oc0 -L2-`;
+	$results = `cat $branch_errors | pipe.pl -W'\\s+' -oc0`;
 	my $branch_error_Ids = create_tmp_file( "gatecountaudit_branch_error_Ids", $results );
 	return $repair_count if ( ! -s $branch_error_Ids );
 	# Open that tmp file and read line by line the Ids then fix them.
@@ -302,7 +302,7 @@ sub repair_incomplete_polling_results( $ )
 		# the data should smooth naturally as as repair older entries then newer ones.
 		# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
-		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;'  | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount | pipe.pl -W'\\s+' -L2-`;
+		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N | pipe.pl -W'\\s+'`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
 		next if ( ! -s $branch_all_previous_month_counts );
 		$results = `cat $branch_all_previous_month_counts | pipe.pl -Lskip7`;
@@ -551,7 +551,7 @@ if ( $opt{'S'} )
 }
 if ( $opt{'u'} )
 {
-	# -u{BRA date count comment}
+	# -u"BRA date count unquoted comment string..."
 	my ( $branch, $date, $count, @comment_words ) = split '\s+', $opt{'u'};
     my $comment = join( ' ', @comment_words );
 	if ( ! defined $branch || ! defined $date || ! defined $count )
