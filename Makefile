@@ -22,6 +22,11 @@
 #
 # Written by Andrew Nisbet at Edmonton Public Library
 # Rev: 
+#      0.1 - This project has moved to production on ils@epl-ils.epl.ca:/home/ils/gatecounts
+#            See: ilsdev@ilsdev1:/home/ilsdev/projects/gatecounts/Makfile for more information
+#            about how this script is distributed. Basically that Makefile copies it to 
+#            the new production directory on the new production machine above, at the time I 
+#            wrote this Thu Jan  3 15:01:46 MST 2019.
 #      0.0 - Dev. 
 ####################################################
 # This application runs native on ILSdev1@epl.ca and should be scheduled from there.

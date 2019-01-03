@@ -48,8 +48,9 @@ use strict;
 use warnings;
 use vars qw/ %opt /;
 use Getopt::Std;
-
-my $VERSION            = qq{0.7.4};
+$ENV{'PATH'}  = '/bin:/usr/bin:/usr/local/bin:/home/ils/gatecounts:/home/ils/gatecounts/bin:/home/ils/bin';
+$ENV{'SHELL'} = '/bin/bash';
+my $VERSION            = qq{0.7.5};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -81,6 +82,7 @@ chomp( my $MSG_DATE    = `date +%Y-%m-%d` );
 my $MESSAGE            = "Estimate based on counts collected from the same weekday of the previous 4 weeks. $MSG_DATE";
 my $RESET_COMMENT      = "Total for this day forced to reset. $MSG_DATE";
 my $SET_TOTAL_COMMENT  = "Total for this day manually set.";
+my $SQL_CONFIG         = qq{/home/ils/mysqlconfigs/patroncount};
 
 #
 # Message about this program and how to use it.
@@ -191,11 +193,11 @@ sub get_gate_IDs( $ )
 	my $results = '';
 	if ( ! $branch )
 	{
-		$results = `echo "select GateId from $GATE_TABLE;" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo "select GateId from $GATE_TABLE;" | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
-		$results = `echo "select GateId from $GATE_TABLE where Branch='$branch';" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo "select GateId from $GATE_TABLE where Branch='$branch';" | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	printf STDERR "Search for branch submitted.\n%s", $results if ( $opt{'d'} );
 	my @ids = split '\n', $results;
@@ -209,7 +211,7 @@ sub get_gate_IDs( $ )
 # return: Array list of all the branches in the lands table.
 sub get_all_branches()
 {
-	my $results = `echo "select distinct Branch from $LANDS_TABLE;" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $results = `echo "select distinct Branch from $LANDS_TABLE;" | mysql --defaults-file=$SQL_CONFIG -N`;
 	my @branch_ids = split '\n', $results;
 	# remove the header from the returned table that describes the columns.
 	shift @branch_ids if ( @branch_ids );
@@ -254,7 +256,7 @@ sub repair_incomplete_polling_results( $ )
 	# the previous 28 days worth of entries which will necessarily include the last 4 week
 	# days prior to the day the error occured.
 	# This finds all the network errors for a given branch.
-	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $results = `echo 'select * from $LANDS_TABLE where Total < 0 and Branch = "$branch" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 	my $branch_errors = create_tmp_file( "gatecountaudit_branch_errors", $results );
 	return $repair_count if ( ! -s $branch_errors );
 	$results = `cat $branch_errors | pipe.pl -W'\\s+' -oc0`;
@@ -302,7 +304,7 @@ sub repair_incomplete_polling_results( $ )
 		# the data should smooth naturally as as repair older entries then newer ones.
 		# Select out these value and then take an average. (1536 + 1349 + 1658 + 1390) / 4 = 1483.25 or 1484.
 		# Select 30 samples from this branch earlier than the date on the entry with the Id we are going to fix.
-		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N | pipe.pl -W'\\s+'`;
+		$results = `echo 'select * from $LANDS_TABLE where Id<$primary_key_Id and Branch = "$branch" order by DateTime desc limit 30;' | mysql --defaults-file=$SQL_CONFIG -N | pipe.pl -W'\\s+'`;
 		my $branch_all_previous_month_counts = create_tmp_file( "gatecountaudit_all_prev_month_counts", $results );
 		next if ( ! -s $branch_all_previous_month_counts );
 		$results = `cat $branch_all_previous_month_counts | pipe.pl -Lskip7`;
@@ -343,7 +345,7 @@ sub repair_incomplete_polling_results( $ )
 				next if ( $answer =~ m/(n|N)/ );
 			}
 			# Updating then becomes
-			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N >>update_err.txt`;
+			`echo 'update $LANDS_TABLE set Total=$average_previous_days, Comment="$MESSAGE" where Id=$primary_key_Id;' | mysql --defaults-file=$SQL_CONFIG -N >>update_err.txt`;
 			$repair_count++;
 		}
 	}
@@ -363,7 +365,7 @@ sub do_audit()
 	{
 		printf STDERR "branch ->%s\n", $branch if ( $opt{'d'} );
 		# Select all the entries for this branch by date range.
-		my $results = `echo 'select * from lands where Branch="$branch" and Total<0;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		my $results = `echo 'select * from lands where Branch="$branch" and Total<0;' | mysql --defaults-file=$SQL_CONFIG -N`;
 		printf "%s", $results;
 	}
 }
@@ -379,7 +381,7 @@ sub get_branch_counts_by_date( $ )
 	my $results = '';
 	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 	{
-		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
@@ -390,7 +392,7 @@ sub get_branch_counts_by_date( $ )
 	{
 		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 		{
-			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
 		}
 		else
 		{
@@ -414,10 +416,10 @@ sub reset_branch_counts_by_date( $ )
 	my $results = '';
 	if ( $lands_id =~ m/^\d{3,}$/ )
 	{
-		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo 'select * from lands where Branch="$branch" and Id="$lands_id";' | mysql --defaults-file=$SQL_CONFIG -N`;
 		my $query = sprintf "update lands set Total=-1, Comment='%s' where Branch='%s' and Id=%d;", $RESET_COMMENT, $branch, $lands_id;
 		printf "query ->%s\n", $query if ( $opt{'d'} );
-		$results = `echo "$query" | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo "$query" | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
@@ -481,7 +483,7 @@ sub compute_branch_error( $ )
 	my $results = '';
 	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 	{
-		$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+		$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
@@ -492,7 +494,7 @@ sub compute_branch_error( $ )
 	{
 		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 		{
-			$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+			$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
 		}
 		else
 		{
@@ -540,7 +542,7 @@ if ( $opt{'s'} )
 }
 if ( $opt{'S'} )
 {
-	my $results = `echo 'select GateId, Branch from gate_info;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $results = `echo 'select GateId, Branch from gate_info;' | mysql --defaults-file=$SQL_CONFIG -N`;
 	my @branches =  get_all_branches();
 	foreach my $branch ( @branches )
 	{
@@ -561,7 +563,7 @@ if ( $opt{'u'} )
 	}
 	# Now add them but make sure there is an entry for that branch and date.
 	my $date_search = $date . '%';
-	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%";' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
+	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%";' | mysql --defaults-file=$SQL_CONFIG -N`;
 	chomp $entry_id;
 	if ( ! defined $entry_id )
 	{
@@ -571,8 +573,8 @@ if ( $opt{'u'} )
 	$comment = $SET_TOTAL_COMMENT if ( ! defined $comment );
 	printf STDERR "%s %s %s %s\n", $branch, $date, $count, $comment;
 	# UPDATE lands SET Total=397,Comment="Value entered hand recorded values June 1, 2018" WHERE Id=38264;
-	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $MSG_DATE" WHERE Id=$entry_id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount -N`;
-	print `echo 'SELECT * FROM lands WHERE Id=$entry_id;' | mysql --defaults-file=/home/ilsdev/mysqlconfigs/patroncount`;
+	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $MSG_DATE" WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG -N`;
+	print `echo 'SELECT * FROM lands WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG`;
 	$repairs++;
 }
 printf STDERR "Total repairs: %d\n", $repairs if ( $opt{'d'} );

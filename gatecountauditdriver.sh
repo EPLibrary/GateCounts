@@ -5,7 +5,7 @@
 #
 ##########################################################
 ADDRESSES=andrew.nisbet\@epl.ca
-HOME_DIR=/home/ilsdev/projects/gatecountaudit
+HOME_DIR=/home/ils/gatecounts
 cd $HOME_DIR
 if [ -s $HOME_DIR/gatecountaudit.pl ]
 then
