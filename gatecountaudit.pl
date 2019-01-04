@@ -24,7 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev:
-#          0.7.5 - Add ordering by DateTime for queries where that makes sense.
+#          0.7.6 - Add ordering by DateTime for queries where that makes sense.
 #                  This is due to additional date entries that were added out of sequence.
 #          0.7.4 - Fix -u to add comment strings without requiring
 #                  special quoting.
