@@ -24,6 +24,8 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev:
+#          0.7.5 - Add ordering by DateTime for queries where that makes sense.
+#                  This is due to additional date entries that were added out of sequence.
 #          0.7.4 - Fix -u to add comment strings without requiring
 #                  special quoting.
 #          0.7.3 - Fix date to today.
@@ -50,7 +52,7 @@ use vars qw/ %opt /;
 use Getopt::Std;
 $ENV{'PATH'}  = '/bin:/usr/bin:/usr/local/bin:/home/ils/gatecounts:/home/ils/gatecounts/bin:/home/ils/bin';
 $ENV{'SHELL'} = '/bin/bash';
-my $VERSION            = qq{0.7.5};
+my $VERSION            = qq{0.7.6};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -365,7 +367,7 @@ sub do_audit()
 	{
 		printf STDERR "branch ->%s\n", $branch if ( $opt{'d'} );
 		# Select all the entries for this branch by date range.
-		my $results = `echo 'select * from lands where Branch="$branch" and Total<0;' | mysql --defaults-file=$SQL_CONFIG -N`;
+		my $results = `echo 'select * from lands where Branch="$branch" and Total<0 order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 		printf "%s", $results;
 	}
 }
@@ -381,7 +383,7 @@ sub get_branch_counts_by_date( $ )
 	my $results = '';
 	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 	{
-		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
+		$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
@@ -392,7 +394,7 @@ sub get_branch_counts_by_date( $ )
 	{
 		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 		{
-			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
+			$results = `echo 'select * from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 		}
 		else
 		{
@@ -483,7 +485,7 @@ sub compute_branch_error( $ )
 	my $results = '';
 	if ( $start_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 	{
-		$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
+		$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 	}
 	else
 	{
@@ -494,7 +496,7 @@ sub compute_branch_error( $ )
 	{
 		if ( $end_date =~ m/^\d{4}\-\d{2}\-\d{2}$/ )
 		{
-			$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date";' | mysql --defaults-file=$SQL_CONFIG -N`;
+			$results = `echo 'select Total from lands where Branch="$branch" and DateTime>="$start_date" and DateTime<="$end_date" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 		}
 		else
 		{
@@ -563,7 +565,7 @@ if ( $opt{'u'} )
 	}
 	# Now add them but make sure there is an entry for that branch and date.
 	my $date_search = $date . '%';
-	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%";' | mysql --defaults-file=$SQL_CONFIG -N`;
+	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
 	chomp $entry_id;
 	if ( ! defined $entry_id )
 	{
