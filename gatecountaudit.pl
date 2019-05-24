@@ -4,7 +4,7 @@
 # Perl source file for project gatecountaudit
 #
 # Finds and repairs bad gate counts in patron count database.
-#    Copyright (C) 2016  Andrew Nisbet
+#    Copyright (C) 2019  Andrew Nisbet
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -24,6 +24,7 @@
 # Author:  Andrew Nisbet, Edmonton Public Library
 # Created: Sat Sep  3 08:28:52 MDT 2016
 # Rev:
+#          0.8.0 - Add -U to set a specific count for all branches on a specific day.
 #          0.7.6 - Add ordering by DateTime for queries where that makes sense.
 #                  This is due to additional date entries that were added out of sequence.
 #          0.7.4 - Fix -u to add comment strings without requiring
@@ -52,7 +53,7 @@ use vars qw/ %opt /;
 use Getopt::Std;
 $ENV{'PATH'}  = '/bin:/usr/bin:/usr/local/bin:/home/ils/gatecounts:/home/ils/gatecounts/bin:/home/ils/bin';
 $ENV{'SHELL'} = '/bin/bash';
-my $VERSION            = qq{0.7.6};
+my $VERSION            = qq{0.8.0};
 chomp( my $TEMP_DIR    = "/tmp" );
 chomp( my $TIME        = `date +%H%M%S` );
 chomp ( my $DATE       = `date +%Y%m%d` );
@@ -85,7 +86,7 @@ my $MESSAGE            = "Estimate based on counts collected from the same weekd
 my $RESET_COMMENT      = "Total for this day forced to reset. $MSG_DATE";
 my $SET_TOTAL_COMMENT  = "Total for this day manually set.";
 my $SQL_CONFIG         = qq{/home/ils/mysqlconfigs/patroncount};
-
+my $LOG                = "$TEMP_DIR/gatecountaudit.log";
 #
 # Message about this program and how to use it.
 #
@@ -93,7 +94,7 @@ sub usage()
 {
     print STDERR << "EOF";
 
-	usage: $0 [-ac"<BRA> <YYYY-MM-DD> [<YYYY-MM-DD>]"df"<BRA> <ID_#>"im<comment>tRr<branch>tx]
+	usage: $0 [options]
 $0 audits and repairs gate counts. The patron count database ocassionally will
 fail to report in or include bogus gate counts. This script is designed to detect
 and repair this issue.
@@ -118,6 +119,11 @@ and repair this issue.
  -u"BRA date count [comment string]": Update a specific date for a specific branch. Branch, Date, and count
    are required, but if the comment is omitted, the message 'Total for this day manually set. \$TODAY'.
    There must already be an existing entry for the branch on the date specified.
+ -U"date count [comment string]": Like -u above, but updates counts for all branches for a given date.
+    This is used to set all gates to '0' for holidays. Another use might be to force all branches to '-1',
+    they get a recomputed estimate based the average of the last 4 weekdays. See -R for more information.
+    be computed using '-R'. Any other use would set all branches to the same gate count for the same day
+    which is obviously problematic.
  -x: This (help) message.
 
 example:
@@ -125,6 +131,7 @@ example:
   $0 -u"HVY 2018-09-02 0 Stat holiday."  # Update HVY's count for Sept. 2 to 0 because it was a stat holiday.
   $0 -c"HVY 2018-08-18 2018-09-03"       # Check the HVY counts from 2018-08-18 to 2018-09-03
   $0 -f"HVY 40816"                       # Reset the count for HVY's DB entry ID No. 40816
+  $0 -U"2019-05-20 0 Stat holiday."      # Update all branches counts to '0' for a stat holiday.
   $0 -rHVY                               # Find any reset values for HVY and estimate what the count should be.
 Version: $VERSION
 EOF
@@ -436,7 +443,7 @@ sub reset_branch_counts_by_date( $ )
 # return:
 sub init
 {
-    my $opt_string = 'ac:df:im:Rr:s:S:tu:x';
+    my $opt_string = 'ac:df:im:Rr:s:S:tu:U:x';
     getopts( "$opt_string", \%opt ) or usage();
     usage() if ( $opt{'x'} );
 	if ( $opt{'m'} )
@@ -508,9 +515,40 @@ sub compute_branch_error( $ )
 	printf "%s: %8.2f\n", $branch, compute_stddev( @samples );
 }
 
+# Sets an arbitrary but specific branch's count to a specific value 
+# for a specific date, and adds a comment with an automatically computed
+# date.
+# param:  Array of words "{branch} {date} {count} {many comment words}"
+# return: count of updates made.
+sub set_branch_date_count_comment( $ )
+{
+    my $repairs = 0;
+    my ( $branch, $date, $count, @comment_words ) = split '\s+', shift;
+    my $comment = join( ' ', @comment_words );
+	if ( ! defined $branch || ! defined $date || ! defined $count )
+	{
+		printf STDERR "** error one or more fields are empty.\n";
+		return $repairs;
+	}
+	# Now add them but make sure there is an entry for that branch and date.
+	my $date_search = $date . '%';
+	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N 2>>$LOG`;
+	chomp $entry_id;
+	if ( ! defined $entry_id || ! $entry_id )
+	{
+		printf STDERR "** error no entry for '%s' on date %s.\n", $branch, $date;
+		return $repairs;
+	}
+	$comment = $SET_TOTAL_COMMENT if ( ! defined $comment );
+	printf STDERR "%s %s %s %s\n", $branch, $date, $count, $comment;
+	# UPDATE lands SET Total=397,Comment="Value entered hand recorded values June 1, 2018" WHERE Id=38264;
+	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $MSG_DATE" WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG -N 2>>$LOG`;
+	print `echo 'SELECT * FROM lands WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG 2>>$LOG`;
+	return $repairs++;
+}
 
 init();
-my $repairs    = 0;
+my $repairs = 0;
 ### code starts
 if ( $opt{'a'} )
 {
@@ -556,28 +594,21 @@ if ( $opt{'S'} )
 if ( $opt{'u'} )
 {
 	# -u"BRA date count unquoted comment string..."
-	my ( $branch, $date, $count, @comment_words ) = split '\s+', $opt{'u'};
-    my $comment = join( ' ', @comment_words );
-	if ( ! defined $branch || ! defined $date || ! defined $count )
-	{
-		printf STDERR "** error one or more fields are empty.\n";
-		exit( 0 );
-	}
-	# Now add them but make sure there is an entry for that branch and date.
-	my $date_search = $date . '%';
-	my $entry_id = `echo 'SELECT Id FROM lands WHERE Branch="$branch" and DateTime LIKE "$date_search%" order by DateTime;' | mysql --defaults-file=$SQL_CONFIG -N`;
-	chomp $entry_id;
-	if ( ! defined $entry_id )
-	{
-		printf STDERR "** error no entry for '%s' on date %s.\n", $branch, $date;
-		exit( 0 );
-	}
-	$comment = $SET_TOTAL_COMMENT if ( ! defined $comment );
-	printf STDERR "%s %s %s %s\n", $branch, $date, $count, $comment;
-	# UPDATE lands SET Total=397,Comment="Value entered hand recorded values June 1, 2018" WHERE Id=38264;
-	my $results = `echo 'UPDATE lands SET Total=$count,Comment="$comment $MSG_DATE" WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG -N`;
-	print `echo 'SELECT * FROM lands WHERE Id=$entry_id;' | mysql --defaults-file=$SQL_CONFIG`;
-	$repairs++;
+	$repairs += set_branch_date_count_comment( $opt{'u'} );
+}
+if ( $opt{'U'} )
+{
+    my @branches = get_all_branches();
+    foreach my $branch ( @branches )
+    {
+        # -U"date count unquoted comment string..."
+        if ( $branch )
+        { 
+            my $param_string = $branch . " " . $opt{'U'};
+            printf STDERR "message: '%s'\n", $param_string if ( $opt{'d'} );
+            $repairs += set_branch_date_count_comment( $param_string );
+        }
+    }
 }
 printf STDERR "Total repairs: %d\n", $repairs if ( $opt{'d'} );
 ### code ends
